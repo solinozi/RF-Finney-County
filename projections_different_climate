@@ -1,1 +1,208 @@
+# Author : Soheil Nozari and Ryan Bailey
+# Date : 12/7/2020
+# Goal : Projecting future groundwater levels in Finney County (Southwest KS) under different climate scenarios, using the random forests technique. The climate scenarios are developed based on the downscaled climatic data of 20 global circulation models (GCMs) for 2 different representative concentration pathways (RCP) scenarios, namely RCP 4.5 and RCP 8.5  
 
+import os
+import os.path
+import time
+import numpy as np
+from shutil import copytree
+from shutil import copyfile
+from shutil import move
+from sklearn.ensemble import RandomForestRegressor
+# Setting home folder
+folder_1 = 'F:/Finney_County/different_models_for_projection/future_projections_in_different_climate_using_RF'
+# Setting projection years
+SYear = 2017
+EYear = 2099
+# Introducing RCP and GCM
+rcp_list = ['rcp45','rcp85']
+gcm_list = ['bcc-csm1-1_r1i1p1','bcc-csm1-1-m_r1i1p1','BNU-ESM_r1i1p1','CanESM2_r1i1p1','CCSM4_r6i1p1','CNRM-CM5_r1i1p1','CSIRO-Mk3-6-0_r1i1p1','ENSEMBLE_MEAN',
+              'GFDL-ESM2G_r1i1p1','GFDL-ESM2M_r1i1p1','HadGEM2-CC365_r1i1p1','HadGEM2-ES365_r1i1p1','inmcm4_r1i1p1','IPSL-CM5A-LR_r1i1p1','IPSL-CM5A-MR_r1i1p1',
+              'IPSL-CM5B-LR_r1i1p1','MIROC5_r1i1p1','MIROC-ESM_r1i1p1','MIROC-ESM-CHEM_r1i1p1','MRI-CGCM3_r1i1p1','NorESM1-M_r1i1p1']
+# Reading RF points
+rf_points_table = np.genfromtxt(os.path.join(folder_1,'initial_data/RF_points/RF_Points.csv'), dtype = (int,int,float,float,'U50',float,float,float,float), delimiter = ',', skip_header = 1)
+rf_points_table = [list(i) for i in rf_points_table]
+# Training RF model based on 1980_2016 available data
+rf_train = np.genfromtxt(os.path.join(folder_1,'RF_training_data_1980_2016/complete_table.csv'), dtype = float, delimiter = ',', skip_header = 1)
+rf_train = [list(i) for i in rf_train]
+feature_train = []
+lable_train = []
+for i in range(0,np.shape(rf_train)[0]):
+    feature_train.append(rf_train[i][7:])
+    lable_train.extend([rf_train[i][6]])
+feature_train = np.array(feature_train)
+lable_train = np.array(lable_train)
+rf = RandomForestRegressor(n_estimators = 600, criterion = 'mse', max_depth = None, min_samples_split = 4, min_samples_leaf = 2, max_features = 2, min_impurity_decrease = 0, bootstrap = True, oob_score = False, random_state = 13, warm_start = False)
+rf.fit(feature_train,lable_train)
+# Now start projecting future water level variations using trained RF model
+for rcp in rcp_list:
+    for gcm in gcm_list:
+        for year in range(SYear, EYear + 1):
+            # Writing year index file
+            f = open(os.path.join(folder_1,'year_index/year_index_'+rcp+'_'+gcm+'.txt'), 'w')
+            f.write(str(year))
+            f.close()
+            # Moving year index file to pertinent rcp and gcm year index folder
+            move(os.path.join(folder_1,'year_index/year_index_'+rcp+'_'+gcm+'.txt'), os.path.join(folder_1,'year_index/'+rcp+'/'+gcm+'/year_index.txt'))
+            # Finding available wells in each year
+            # We assume all active wells in 2017 will remain active throughout projection period unless we know they will be plugged in the future due to conservation plans (like CREP) or aquifer saturated thickness at the place of irrigation wells drops below 9 meters or it drops below 1 meter at the place of other wells 
+            # Reading wells construction and plugging dates table
+            wells_dates = np.genfromtxt(os.path.join(folder_1,'initial_data/pdivs/all_pdivs_in_finney_and_3500m_buffer.csv'), dtype = (int,float,float,int,'U50','U5','U5','U5',float,float,'U5','U1000','U5','U1000'), delimiter = ',', skip_header = 1)
+            wells_dates = [list(i) for i in wells_dates]
+            # Finding available wells based on wells construction-plugging years and specified inactive years
+            z = []
+            z.append(['pdiv_id','longitude','latitude','x_coord','y_coord','well_kid','water_use'])
+            for i in range(0, np.shape(wells_dates)[0]):
+                if wells_dates[i][0] != -999 and wells_dates[i][5] == 'Y' and wells_dates[i][12] == 'N' and int(wells_dates[i][6]) <= year:
+                    if wells_dates[i][7] == 'NA' or int(wells_dates[i][7])-1 >= year:
+                        inactive_years = wells_dates[i][13].split('_')
+                        if '2017' not in inactive_years:
+                            water_use_list = []
+                            water_use_list.extend([wells_dates[i][4]])
+                            for j in range(0,np.shape(wells_dates)[0]):
+                                if wells_dates[i][0] == wells_dates[j][0] and i != j:
+                                    if int(wells_dates[j][6]) <= year:
+                                        if wells_dates[j][7] == 'NA' or int(wells_dates[j][7])-1 >= year:
+                                            inactive_years = wells_dates[j][13].split('_')
+                                            if '2017' not in inactive_years:
+                                                water_use_list.extend([wells_dates[j][4]])
+                                    wells_dates[j][0] = -999
+                            if len(water_use_list) == 1:
+                                water_use = water_use_list[0]
+                            else:
+                                irr_use_flag = 0
+                                ind_use_flag = 0
+                                mun_use_flag = 0
+                                for k in water_use_list:
+                                    if k == 'IRR':
+                                        irr_use_flag = 1
+                                    elif k == 'IND':
+                                        ind_use_flag = 1
+                                    elif k == 'MUN':
+                                        mun_use_flag = 1
+                                if irr_use_flag == 1 and ind_use_flag == 1 and mun_use_flag == 1:
+                                    water_use = 'IRR_IND_MUN'
+                                elif irr_use_flag == 1 and ind_use_flag == 1 and mun_use_flag == 0:
+                                    water_use = 'IRR_IND'
+                                elif irr_use_flag == 1 and ind_use_flag == 0 and mun_use_flag == 1:
+                                    water_use = 'IRR_MUN'
+                                elif irr_use_flag == 0 and ind_use_flag == 1 and mun_use_flag == 1:
+                                    water_use = 'IND_MUN'
+                            z.append([wells_dates[i][0],wells_dates[i][1],wells_dates[i][2],wells_dates[i][8],wells_dates[i][9],wells_dates[i][3],water_use])
+                    wells_dates[i][0] = -999
+                elif wells_dates[i][0] != -999 and wells_dates[i][5] == 'N' and wells_dates[i][12] == 'N' and int(wells_dates[i][6]) <= year:
+                    if wells_dates[i][7] == 'NA' or int(wells_dates[i][7])-1 >= year:
+                        inactive_years = wells_dates[i][13].split('_')
+                        if '2017' not in inactive_years:
+                            water_use = wells_dates[i][4]
+                            z.append([wells_dates[i][0],wells_dates[i][1],wells_dates[i][2],wells_dates[i][8],wells_dates[i][9],wells_dates[i][3],water_use])
+                    wells_dates[i][0] = -999
+            f = open(os.path.join(folder_1,'available_wells_different_years/'+rcp+'/'+gcm+'/pdivs_in_'+str(year)+'.txt'), 'w')
+            f.write('\n'.join(','.join(map(str,i)) for i in z))
+            f.close()
+            # Running ArcPy script as an executable file to create projected water table elevation raster, saturated thickness raster, Sy raster, and filtering available wells based on aquifer saturated thickness
+            print(rcp+'_'+gcm+'_'+str(year)+'_'+'Building Projected Rasters')
+            os.startfile(os.path.join(folder_1, 'all_calculations_in_arcpy.py'))
+            # Waiting for outputs of ArcPy script (looking for outputs every 90 seconds)
+            while not os.path.exists(os.path.join(folder_1,'available_wells_different_years/'+rcp+'/'+gcm+'/shapefiles/available_wells_'+str(year)+'.shp')):
+                time.sleep(90)
+            # Start building RF model feature table for projecting future water level variations
+            features_table = []
+            features_table.append(['point_id','well_kid','latitude','longitude','lat_long_datum','year','Landsurface_elev(m)','Bedrock_elev(m)','Wtable_elev(m)','Sy','precip(mm)','sthick_no_all_wells_combo_less_3000m','depth_to_water(m)','Mean_SPEI3_IrrigSeas','Mean_SPEI3_WaterYear'])
+            # Reading last year projected data
+            if year == 2017:
+                last_year_table = np.genfromtxt(os.path.join(folder_1,'initial_data/RF_points_water_table_change_in_2016/RF_Points_Wtable_Change_2016.csv'), dtype = (int,int,float,float,'U20',int,float,float,float,float,float,float), delimiter = ',', skip_header = 1)
+            else:
+                last_year_table = np.genfromtxt(os.path.join(folder_1,'projected_water_table_change_at_RF_points/'+rcp+'/'+gcm+'/RF_Points_Wtable_Change_'+str(year-1)+'.txt'), dtype = (int,int,float,float,'U20',int,float,float,float,float,float,float), delimiter = ',', skip_header = 1)
+            last_year_table = [list(i) for i in last_year_table]
+            # Reading available wells table
+            available_wells = np.genfromtxt(os.path.join(folder_1,'available_wells_different_years/'+rcp+'/'+gcm+'/available_wells_with_sthick_'+str(year)+'.txt'), dtype = (int,float,float,float,float,int,'U50',float), delimiter = ',', skip_header = 1)
+            available_wells = [list(i) for i in available_wells]
+            # Reading specific yield (Sy) table
+            sy_table = np.genfromtxt(os.path.join(folder_1,'Sy_RF_points/'+rcp+'/'+gcm+'/RF_points_sy_'+str(year)+'.txt'), dtype = float, delimiter = ',', skip_header = 1)
+            sy_table = [list(i) for i in sy_table]
+            print(rcp+'_'+gcm+'_'+str(year)+'_'+'Projecting Water Level Variations')
+            # Determining feature values for each RF point one by one
+            for i in range(0, np.shape(rf_points_table)[0]):
+                point_id = rf_points_table[i][0]
+                well_kid = rf_points_table[i][1]
+                landsurf = rf_points_table[i][5]
+                bedrock = rf_points_table[i][6]
+                x_coord = rf_points_table[i][7]
+                y_coord = rf_points_table[i][8]
+                longitude = rf_points_table[i][3]
+                latitude = rf_points_table[i][2]
+                datum = rf_points_table[i][4]
+                # Updating water table elevation, saturated thickness, and depth to water table
+                for j in range(0, np.shape(last_year_table)[0]):
+                    if last_year_table[j][0] == point_id:
+                        sthickness = last_year_table[j][11] + last_year_table[j][9]
+                        # Saturated thickness can't be negative
+                        if sthickness < 0:
+                            sthickness = 0
+                        wtable = sthickness + bedrock
+                        wdepth = landsurf - wtable
+                        break
+                # Counting No of available wells in 3000 m vicinity of RF points
+                radius = 3000
+                no_of_wells = 0
+                for j in range(0, np.shape(available_wells)[0]):
+                    distance = ((available_wells[j][3] - x_coord)**2 + (available_wells[j][4] - y_coord)**2)**0.5
+                    if distance <= radius:
+                        no_of_wells = no_of_wells + 1
+                # Updating combined saturated thickness-number of available wells feature
+                well_sthick_combo = no_of_wells * sthickness
+                # Reading Sy
+                for j in range(0, np.shape(sy_table)[0]):
+                    if int(sy_table[j][0]) == point_id:
+                        sy = sy_table[j][1]
+                        break
+                # Reading annual (water year) precipitation
+                precip_table = np.genfromtxt(os.path.join(folder_1,'Precip_RF_points/projected_Precipitation/'+gcm+'/'+rcp+'/RF_Point_'+str(point_id)+'_Precipitation.txt'), dtype = float, delimiter = ',', skip_header = 1)
+                precip_table = [list(j) for j in precip_table]
+                for j in range(0, np.shape(precip_table)[0]):
+                    if int(precip_table[j][0]) == year:
+                        precip = precip_table[j][1]
+                        break
+                # Reading mean SPEI3 in irrigation season (May to September) and mean SPEI3 in each water year
+                spei_table = np.genfromtxt(os.path.join(folder_1,'SPEI_RF_points/'+gcm+'/'+rcp+'/spei3/RF_Point_'+str(point_id)+'_Sum_Mean_SPEI.txt'), dtype = float, delimiter = ',', skip_header = 1)
+                spei_table = [list(j) for j in spei_table]
+                for j in range(0, np.shape(spei_table)[0]):
+                    if int(spei_table[j][0]) == year:
+                        spei3_mean_irrig_season = spei_table[j][2]
+                        spei3_mean_wyear = spei_table[j][4]
+                        break
+                features_table.append([point_id,well_kid,latitude,longitude,datum,year,landsurf,bedrock,wtable,sy,precip,well_sthick_combo,wdepth,spei3_mean_irrig_season,spei3_mean_wyear])
+            f = open(os.path.join(folder_1,'RF_model_projections_feature_table/'+rcp+'/'+gcm+'/RF_model_projections_feature_table_'+str(year)+'.txt'),'w')
+            f.write('\n'.join(','.join(map(str,i)) for i in features_table))
+            f.close()
+            # Projecting water level variation at RF points using already trained Random Forests model
+            feature_predict = []
+            for i in range(1, np.shape(features_table)[0]):
+                feature_predict.append(features_table[i][9:])
+            feature_predict = np.array(feature_predict)
+            prj_water_level_change = rf.predict(feature_predict)
+            # Creating projected water level change table (this table will be used in the next year)
+            waterlevel_change_table = []
+            waterlevel_change_table.append(['point_id','well_kid','LATITUDE','LONGITUDE','LAT_LONG_DATUM','year','Landsurface_elev(m)','Bedrock_elev(m)','Wtable_elev(m)','Sthickness(m)','Depth_to_Wtable(m)','Wtable_change(m)'])
+            for i in range(1, np.shape(features_table)[0]):
+                w1 = []
+                w1.extend(features_table[i][0:9])
+                w1.extend([features_table[i][8] - features_table[i][7]])
+                w1.extend([features_table[i][6] - features_table[i][8]])
+                # If saturated thickness is zero, projected water level change will be zero
+                if (features_table[i][8] - features_table[i][7]) == 0:
+                    w1.extend([0.0])
+                else:
+                    w1.extend([prj_water_level_change[i-1]])
+                waterlevel_change_table.append(w1[:])
+            f = open(os.path.join(folder_1,'projected_water_table_change_at_RF_points/'+rcp+'/'+gcm+'/RF_Points_Wtable_Change_'+str(year)+'.txt'),'w')
+            f.write('\n'.join(','.join(map(str,i)) for i in waterlevel_change_table))
+            f.close()
+            print(rcp+'_'+gcm+'_'+str(year)+'_'+'Projection is Completed')
+    # Running ArcPy script as an executable file to remove redundant rasters
+    print(rcp+'_'+gcm+'_'+'Removing Redundat Rasters')
+    os.startfile(os.path.join(folder_1, 'removing_redundant_rasters.py'))
+    # Waiting 180 seconds to let ArcPy script finishes removing redundant rasters
+    time.sleep(180)
