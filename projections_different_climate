@@ -1,6 +1,6 @@
 # Author : Soheil Nozari and Ryan Bailey
 # Date : 12/7/2020
-# Goal : Projecting future groundwater levels in Finney County (Southwest KS) under different climate scenarios, using the random forests technique. The climate scenarios are developed based on the downscaled climatic data of 20 global circulation models (GCMs) for 2 different representative concentration pathways (RCP) scenarios, namely RCP 4.5 and RCP 8.5  
+# Goal : Projecting future groundwater levels in Finney County (Southwest KS) under different climate scenarios, using the random forests technique. The climate scenarios are developed based on the downscaled climatic data of 20 general circulation models (GCMs) for 2 different representative concentration pathways (RCP) scenarios, namely RCP 4.5 and RCP 8.5  
 
 import os
 import os.path
