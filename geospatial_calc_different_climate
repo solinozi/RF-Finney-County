@@ -1,5 +1,5 @@
 # Auhtor: Soheil Nozari and Ryan Bailey
-# Date: 12/6/2020
+# Date: 12/7/2020
 # Goal1: Getting projected water table changes at RF points and creating projected water table change, projected water table elevation, and projected saturated thickness rasters subsequently 
 # Goal2: Using created water table elevation raster to locate water level at each borehole and calculating weighted average Sy at each borehole. Then interpolating Sy values at boreholes to create raster of Sy and getting Sy value at each RF point.
 # Goal3: Using created saturated thickness raster to filter available wells; i.e. whenever aquifer saturated thickness at the place of irrigation wells drops below 9 meters or it drops below 1 meter at the place of other wells
